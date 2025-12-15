@@ -31,6 +31,9 @@ on:
           - 'iso'
           - 'dmg'
 
+permissions:
+  contents: write   # required for GitHub Release
+
 jobs:
   build-installer:
     runs-on: macos-15-intel
@@ -55,13 +58,18 @@ jobs:
           if [ "${{ github.event.inputs.image_format }}" == "iso" ]; then
             echo "Creating macOS ${{ github.event.inputs.macos_version }} ISO image"
             bash mkmaciso "${{ github.event.inputs.macos_version }}"
-            echo "image_name=$(basename *.iso)" >> $GITHUB_OUTPUT
+            IMAGE_NAME=$(basename *.iso)
           else
             echo "Creating macOS ${{ github.event.inputs.macos_version }} DMG image"
             bash mkmaciso "${{ github.event.inputs.macos_version }}" dmg
-            echo "image_name=$(basename *.dmg)" >> $GITHUB_OUTPUT
+            IMAGE_NAME=$(basename *.dmg)
           fi
 
+          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+
+      # --------------------------------------------------
+      # CI artifact (keep for troubleshooting / short-term)
+      # --------------------------------------------------
       - name: Upload ISO artifact
         if: github.event.inputs.image_format == 'iso'
         uses: actions/upload-artifact@v5
@@ -80,17 +88,38 @@ jobs:
           compression-level: 0
           retention-days: 5
 
+      # --------------------------------------------------
+      # GitHub Release (FAST download, recommended)
+      # --------------------------------------------------
+      - name: Create GitHub Release and upload image
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.macos_version }}-${{ github.event.inputs.image_format }}-${{ github.run_number }}
+          name: macOS ${{ github.event.inputs.macos_version }} (${{ github.event.inputs.image_format }})
+          body: |
+            macOS version: ${{ github.event.inputs.macos_version }}
+            Image format: ${{ github.event.inputs.image_format }}
+
+            This image is built automatically by GitHub Actions.
+
+            Recommended download methods:
+            - aria2 (multi-thread, resumable)
+            - wget / curl
+
+            Example (aria2):
+            aria2c -x 16 -s 16 <download-url>
+
+          files: |
+            *.iso
+            *.dmg
+
       - name: Summary
         run: |
-          if [ "${{ github.event.inputs.image_format }}" == "iso" ]; then
-            echo "## Successfully built $(basename *.iso)" >> $GITHUB_STEP_SUMMARY
-            echo "This ISO is intended for create macOS virtual machine on Proxmox VE, QEMU, VMware, and VirtualBox." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## Successfully built $(basename *.dmg)" >> $GITHUB_STEP_SUMMARY
-            echo 'Note: This DMG is intended for flash to USB drive using [Rufus](https://rufus.ie/en/#download) (Windows) or dd (Linux)' >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "## ✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Found this useful? Give it a ⭐ star so others can find it too! https://github.com/LongQT-sea/macos-iso-builder" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ steps.create_image.outputs.image_name }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> [!TIP]" >> $GITHUB_STEP_SUMMARY
-          echo "> Enable [Cloudflare WARP](https://one.one.one.one/) for faster downloads." >> $GITHUB_STEP_SUMMARY
+          echo "**Download recommendation:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Use GitHub Release for fast, resumable downloads" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Found this useful? Give it a ⭐ star so others can find it too!" >> $GITHUB_STEP_SUMMARY
