@@ -620,6 +620,7 @@ install_legacy_app() {
 download_modern_macos() {
     local version_num="$1"
     version_name=$(get_codename $version_num)
+    version_name="${version_name/_/ }"
     
     # Get CPU architecture
     local cpu_arch=$(uname -m)
