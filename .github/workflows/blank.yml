@@ -1,5 +1,22 @@
-- name: Check COS secrets exist
-  run: |
-    if [ -z "${{ secrets.COS_SECRET_ID }}" ]; then echo "Missing COS_SECRET_ID"; exit 1; fi
-    if [ -z "${{ secrets.COS_SECRET_KEY }}" ]; then echo "Missing COS_SECRET_KEY"; exit 1; fi
-    echo "COS secrets OK"
+name: Check COS Secrets
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check COS secrets exist
+        run: |
+          if [ -z "${{ secrets.COS_SECRET_ID }}" ]; then
+            echo "Missing COS_SECRET_ID"
+            exit 1
+          fi
+
+          if [ -z "${{ secrets.COS_SECRET_KEY }}" ]; then
+            echo "Missing COS_SECRET_KEY"
+            exit 1
+          fi
+
+          echo "COS secrets OK"
