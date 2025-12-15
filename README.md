@@ -1,11 +1,12 @@
-## macOS Installer Image Builder – No Mac Required
+## Build macOS 10.7 - macOS 26 ISO and DMG via Github Action – No Mac Required
 
-* Generate bootable macOS installer images directly from Apple's servers via GitHub Actions.
+* Support **macOS 10.7 Lion** through **macOS 26 Tahoe** installers. 
+* Download macOS installers exclusively from official Apple sources.
 * Includes intelligent file size optimization to produce the smallest possible installer images.
 
 **Supported formats:**
 * **ISO** – True DVD format compatible with **Proxmox VE**, **QEMU**, **VirtualBox**, and **VMware**
-* **DMG** – Create bootable macOS installer USB drives on Windows with [Rufus](https://rufus.ie/en/#download) or on Linux with **`dd`**
+* **DMG** – For create bootable macOS installer USB drives on Windows with [Rufus](https://rufus.ie/en/#download) or on Linux with **`dd`**
 
 **Available workflows:**
 * **macOS Recovery ISO (Recommended)** – Lightweight recovery image (build takes ~2-5 min) • Best for virtualization
@@ -22,8 +23,8 @@
 
 1. **Fork** this repository.
 2. Go to the **Actions** tab in your forked repository.
-3. Click the green **"I understand my workflows, go ahead and enable them"** button.
-4. Select the **"Build macOS Installer ISO/DMG image"** or **"Build macOS Recovery ISO image"** workflow.
+3. Click the green button **"I understand my workflows, go ahead and enable them"**.
+4. Select the **"Build macOS Installer ISO/DMG image"** or **"Build macOS Recovery ISO image"** workflow from the left sidebar..
 5. Click the **"Run workflow"** button.
 6. Configure the workflow inputs:
 
