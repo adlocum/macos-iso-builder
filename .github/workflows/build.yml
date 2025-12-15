@@ -24,20 +24,17 @@ on:
           - 'Mountain Lion'
           - 'Lion'
       image_format:
-        description: 'Select image format: iso for virtual machines, dmg for burning to USB drive'
+        description: 'Select image format: iso for virtual machines, dmg for USB install'
         required: true
         type: choice
         options:
           - 'iso'
           - 'dmg'
 
-permissions:
-  contents: write   # required for GitHub Release
-
 jobs:
   build-installer:
     runs-on: macos-15-intel
-    timeout-minutes: 70
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -47,79 +44,66 @@ jobs:
         run: |
           echo "Runner OS: $(sw_vers -productName) $(sw_vers -productVersion)"
           echo "Architecture: $(uname -m)"
-          echo "Available disk space:"
+          echo "Disk space:"
           df -h
           echo "Memory:"
           top -l 1 | grep PhysMem
 
-      - name: Create Image
+      - name: Create macOS Image
         id: create_image
         run: |
-          if [ "${{ github.event.inputs.image_format }}" == "iso" ]; then
-            echo "Creating macOS ${{ github.event.inputs.macos_version }} ISO image"
+          if [ "${{ github.event.inputs.image_format }}" = "iso" ]; then
+            echo "Creating macOS ${{ github.event.inputs.macos_version }} ISO"
             bash mkmaciso "${{ github.event.inputs.macos_version }}"
-            IMAGE_NAME=$(basename *.iso)
+            FILE=$(ls *.iso)
           else
-            echo "Creating macOS ${{ github.event.inputs.macos_version }} DMG image"
+            echo "Creating macOS ${{ github.event.inputs.macos_version }} DMG"
             bash mkmaciso "${{ github.event.inputs.macos_version }}" dmg
-            IMAGE_NAME=$(basename *.dmg)
+            FILE=$(ls *.dmg)
           fi
 
-          echo "image_name=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          echo "image_name=$FILE" >> $GITHUB_OUTPUT
+          echo "file_size=$(du -h "$FILE" | cut -f1)" >> $GITHUB_OUTPUT
+          shasum -a 256 "$FILE" | awk '{print $1}' > sha256.txt
 
-      # --------------------------------------------------
-      # CI artifact (keep for troubleshooting / short-term)
-      # --------------------------------------------------
-      - name: Upload ISO artifact
-        if: github.event.inputs.image_format == 'iso'
-        uses: actions/upload-artifact@v5
-        with:
-          name: ${{ steps.create_image.outputs.image_name }}
-          path: ./*.iso
-          compression-level: 0
-          retention-days: 5
+      # -------- Tencent COS Upload --------
 
-      - name: Upload DMG artifact
-        if: github.event.inputs.image_format == 'dmg'
-        uses: actions/upload-artifact@v5
-        with:
-          name: ${{ steps.create_image.outputs.image_name }}
-          path: ./*.dmg
-          compression-level: 0
-          retention-days: 5
+      - name: Install coscli
+        run: |
+          curl -L https://github.com/tencentyun/coscli/releases/latest/download/coscli-darwin-amd64 -o coscli
+          chmod +x coscli
+          sudo mv coscli /usr/local/bin/coscli
 
-      # --------------------------------------------------
-      # GitHub Release (FAST download, recommended)
-      # --------------------------------------------------
-      - name: Create GitHub Release and upload image
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.macos_version }}-${{ github.event.inputs.image_format }}-${{ github.run_number }}
-          name: macOS ${{ github.event.inputs.macos_version }} (${{ github.event.inputs.image_format }})
-          body: |
-            macOS version: ${{ github.event.inputs.macos_version }}
-            Image format: ${{ github.event.inputs.image_format }}
+      - name: Configure coscli
+        run: |
+          coscli config set \
+            --secret_id ${{ secrets.COS_SECRET_ID }} \
+            --secret_key ${{ secrets.COS_SECRET_KEY }} \
+            --bucket ${{ secrets.COS_BUCKET }} \
+            --region ${{ secrets.COS_REGION }}
 
-            This image is built automatically by GitHub Actions.
+      - name: Upload image to Tencent COS
+        run: |
+          FILE="${{ steps.create_image.outputs.image_name }}"
+          coscli upload "$FILE" macos/ \
+            --part-size 128 \
+            --parallel 4
 
-            Recommended download methods:
-            - aria2 (multi-thread, resumable)
-            - wget / curl
-
-            Example (aria2):
-            aria2c -x 16 -s 16 <download-url>
-
-          files: |
-            *.iso
-            *.dmg
+      # -------- Job Summary --------
 
       - name: Summary
         run: |
-          echo "## ✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
+          FILE="${{ steps.create_image.outputs.image_name }}"
+          SIZE="${{ steps.create_image.outputs.file_size }}"
+          SHA256=$(cat sha256.txt)
+
+          echo "## ✅ Successfully built macOS image" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Image:** ${{ steps.create_image.outputs.image_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **File:** $FILE" >> $GITHUB_STEP_SUMMARY
+          echo "- **Size:** $SIZE" >> $GITHUB_STEP_SUMMARY
+          echo "- **SHA256:** \`$SHA256\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Download recommendation:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Use GitHub Release for fast, resumable downloads" >> $GITHUB_STEP_SUMMARY
+          echo "⬇️ **Download (Tencent COS):**" >> $GITHUB_STEP_SUMMARY
+          echo "https://${{ secrets.COS_BUCKET }}.cos.${{ secrets.COS_REGION }}.myqcloud.com/macos/$FILE" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Found this useful? Give it a ⭐ star so others can find it too!" >> $GITHUB_STEP_SUMMARY
+          echo "> This image is intended for Proxmox VE, QEMU, VMware, VirtualBox or USB installation." >> $GITHUB_STEP_SUMMARY
