@@ -54,11 +54,11 @@ jobs:
         run: |
           if [ "${{ github.event.inputs.image_format }}" == "iso" ]; then
             echo "Creating macOS ${{ github.event.inputs.macos_version }} ISO image"
-            bash create_macos_installer_v2.sh "${{ github.event.inputs.macos_version }}"
+            bash mkmaciso "${{ github.event.inputs.macos_version }}"
             echo "image_name=$(basename *.iso)" >> $GITHUB_OUTPUT
           else
             echo "Creating macOS ${{ github.event.inputs.macos_version }} DMG image"
-            bash create_macos_installer_v2.sh "${{ github.event.inputs.macos_version }}" dmg
+            bash mkmaciso "${{ github.event.inputs.macos_version }}" dmg
             echo "image_name=$(basename *.dmg)" >> $GITHUB_OUTPUT
           fi
 
