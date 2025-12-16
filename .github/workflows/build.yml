@@ -24,7 +24,7 @@ on:
           - 'Mountain Lion'
           - 'Lion'
       image_format:
-        description: 'Select image format: iso for virtual machines, dmg for USB install'
+        description: 'Select image format: iso for virtual machines, dmg for burning to USB drive'
         required: true
         type: choice
         options:
@@ -34,7 +34,7 @@ on:
 jobs:
   build-installer:
     runs-on: macos-15-intel
-    timeout-minutes: 90
+    timeout-minutes: 70
 
     steps:
       - name: Checkout repository
@@ -44,66 +44,53 @@ jobs:
         run: |
           echo "Runner OS: $(sw_vers -productName) $(sw_vers -productVersion)"
           echo "Architecture: $(uname -m)"
-          echo "Disk space:"
+          echo "Available disk space:"
           df -h
           echo "Memory:"
           top -l 1 | grep PhysMem
 
-      - name: Create macOS Image
+      - name: Create Image
         id: create_image
         run: |
-          if [ "${{ github.event.inputs.image_format }}" = "iso" ]; then
-            echo "Creating macOS ${{ github.event.inputs.macos_version }} ISO"
+          if [ "${{ github.event.inputs.image_format }}" == "iso" ]; then
+            echo "Creating macOS ${{ github.event.inputs.macos_version }} ISO image"
             bash mkmaciso "${{ github.event.inputs.macos_version }}"
-            FILE=$(ls *.iso)
+            echo "image_name=$(basename *.iso)" >> $GITHUB_OUTPUT
           else
-            echo "Creating macOS ${{ github.event.inputs.macos_version }} DMG"
+            echo "Creating macOS ${{ github.event.inputs.macos_version }} DMG image"
             bash mkmaciso "${{ github.event.inputs.macos_version }}" dmg
-            FILE=$(ls *.dmg)
+            echo "image_name=$(basename *.dmg)" >> $GITHUB_OUTPUT
           fi
 
-          echo "image_name=$FILE" >> $GITHUB_OUTPUT
-          echo "file_size=$(du -h "$FILE" | cut -f1)" >> $GITHUB_OUTPUT
-          shasum -a 256 "$FILE" | awk '{print $1}' > sha256.txt
+      - name: Upload ISO artifact
+        if: github.event.inputs.image_format == 'iso'
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ steps.create_image.outputs.image_name }}
+          path: ./*.iso
+          compression-level: 0
+          retention-days: 7
 
-      # -------- Tencent COS Upload --------
-
-      - name: Install coscli
-        run: |
-          curl -L https://github.com/tencentyun/coscli/releases/latest/download/coscli-darwin-amd64 -o coscli
-          chmod +x coscli
-          sudo mv coscli /usr/local/bin/coscli
-
-      - name: Configure coscli
-        run: |
-          coscli config set \
-            --secret_id ${{ secrets.COS_SECRET_ID }} \
-            --secret_key ${{ secrets.COS_SECRET_KEY }} \
-            --bucket ${{ secrets.COS_BUCKET }} \
-            --region ${{ secrets.COS_REGION }}
-
-      - name: Upload image to Tencent COS
-        run: |
-          FILE="${{ steps.create_image.outputs.image_name }}"
-          coscli upload "$FILE" macos/ \
-            --part-size 128 \
-            --parallel 4
-
-      # -------- Job Summary --------
+      - name: Upload DMG artifact
+        if: github.event.inputs.image_format == 'dmg'
+        uses: actions/upload-artifact@v5
+        with:
+          name: ${{ steps.create_image.outputs.image_name }}
+          path: ./*.dmg
+          compression-level: 0
+          retention-days: 7
 
       - name: Summary
         run: |
-          FILE="${{ steps.create_image.outputs.image_name }}"
-          SIZE="${{ steps.create_image.outputs.file_size }}"
-          SHA256=$(cat sha256.txt)
-
-          echo "## ✅ Successfully built macOS image" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.image_format }}" == "iso" ]; then
+            echo "## Successfully built $(basename *.iso)" >> $GITHUB_STEP_SUMMARY
+            echo "Note: This ISO is intended for create macOS virtual machine on Proxmox VE, QEMU, VMware, and VirtualBox." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Successfully built $(basename *.dmg)" >> $GITHUB_STEP_SUMMARY
+            echo 'Note: This DMG is intended for flash to USB drive using [Rufus](https://rufus.ie/en/#download) (Windows) or dd (Linux)' >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **File:** $FILE" >> $GITHUB_STEP_SUMMARY
-          echo "- **Size:** $SIZE" >> $GITHUB_STEP_SUMMARY
-          echo "- **SHA256:** \`$SHA256\`" >> $GITHUB_STEP_SUMMARY
+          echo "Found this useful? Give it a ⭐ star so others can find it too! https://github.com/LongQT-sea/macos-iso-builder" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "⬇️ **Download (Tencent COS):**" >> $GITHUB_STEP_SUMMARY
-          echo "https://${{ secrets.COS_BUCKET }}.cos.${{ secrets.COS_REGION }}.myqcloud.com/macos/$FILE" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> This image is intended for Proxmox VE, QEMU, VMware, VirtualBox or USB installation." >> $GITHUB_STEP_SUMMARY
+          echo "> [!TIP]" >> $GITHUB_STEP_SUMMARY
+          echo "> Enable [Cloudflare WARP](https://one.one.one.one/) for faster downloads." >> $GITHUB_STEP_SUMMARY
